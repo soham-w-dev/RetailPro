@@ -28,6 +28,13 @@ export default function LoginScreen() {
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(30)).current;
 
+  // Route each role to their correct home screen
+  const getHomeRoute = (role: string) => {
+    if (role === 'CASHIER') return '/(main)/pos';
+    if (role === 'STOCK_CLERK') return '/(main)/pos';
+    return '/(main)/dashboard'; // ADMIN
+  };
+
   useEffect(() => {
     Animated.parallel([
       Animated.timing(fadeAnim, { toValue: 1, duration: 800, useNativeDriver: true }),
@@ -43,7 +50,7 @@ export default function LoginScreen() {
       const data = await res.json();
       if (Platform.OS !== 'web') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       setUser(data.user);
-      router.replace('/(main)/dashboard');
+      router.replace(getHomeRoute(data.user.role) as any);
     } catch (e: any) {
       setError(e.message?.includes('401') ? 'Invalid email or password' : 'Login failed');
       if (Platform.OS !== 'web') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
@@ -58,7 +65,7 @@ export default function LoginScreen() {
       const data = await res.json();
       if (Platform.OS !== 'web') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       setUser(data.user);
-      router.replace('/(main)/dashboard');
+      router.replace(getHomeRoute(data.user.role) as any);
     } catch (e: any) {
       setError(e.message?.includes('401') ? 'Invalid PIN' : 'Login failed');
       if (Platform.OS !== 'web') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
@@ -200,19 +207,16 @@ export default function LoginScreen() {
               <View style={[styles.demoBadge, { backgroundColor: colors.admin + '20' }]}>
                 <Text style={[styles.demoBadgeText, { color: colors.admin, fontFamily: 'Inter_600SemiBold' }]}>ADMIN</Text>
               </View>
-              <Text style={[styles.demoText, { color: colors.textSecondary, fontFamily: 'Inter_400Regular' }]}>admin@retailpro.com / admin123</Text>
             </View>
             <View style={styles.demoRow}>
               <View style={[styles.demoBadge, { backgroundColor: colors.cashier + '20' }]}>
                 <Text style={[styles.demoBadgeText, { color: colors.cashier, fontFamily: 'Inter_600SemiBold' }]}>CASHIER</Text>
               </View>
-              <Text style={[styles.demoText, { color: colors.textSecondary, fontFamily: 'Inter_400Regular' }]}>PIN: 2345</Text>
             </View>
             <View style={styles.demoRow}>
               <View style={[styles.demoBadge, { backgroundColor: colors.stockClerk + '20' }]}>
-                <Text style={[styles.demoBadgeText, { color: colors.stockClerk, fontFamily: 'Inter_600SemiBold' }]}>STOCK</Text>
+                <Text style={[styles.demoBadgeText, { color: colors.stockClerk, fontFamily: 'Inter_600SemiBold' }]}>STOCK_CLERK</Text>
               </View>
-              <Text style={[styles.demoText, { color: colors.textSecondary, fontFamily: 'Inter_400Regular' }]}>PIN: 3456</Text>
             </View>
           </View>
         </ScrollView>

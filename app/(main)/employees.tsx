@@ -18,15 +18,21 @@ export default function EmployeesScreen() {
   const insets = useSafeAreaInsets();
   const [tab, setTab] = useState<Tab>('employees');
   const [showAddModal, setShowAddModal] = useState(false);
-  const [newEmployee, setNewEmployee] = useState({ name: '', email: '', phone: '', password: '', pin: '', role: 'CASHIER' as const, status: 'Active' });
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null);
+  const [dataToEdit, setDateToEdit] = useState<Partial<Employee> & { password?: string }>({});
+  const [newEmployee, setNewEmployee] = useState({ name: '', email: '', phone: '', password: '', pin: '', role: 'CASHIER' as 'CASHIER' | 'STOCK_CLERK' | 'ADMIN', status: 'Active' });
 
   const usersQuery = useQuery<Employee[]>({ queryKey: ['/api/users'] });
   const attendanceQuery = useQuery<any[]>({ queryKey: ['/api/attendance'] });
   const sessionsQuery = useQuery<any[]>({ queryKey: ['/api/session-logs'] });
+  const reportsQuery = useQuery<any>({ queryKey: ['/api/reports'] });
 
   const users = usersQuery.data || [];
   const attendance = attendanceQuery.data || [];
   const sessions = sessionsQuery.data || [];
+  const cashierPerformance: { name: string; transactions: number; revenue: number }[] =
+    reportsQuery.data?.cashierPerformance || [];
 
   const totalStaff = users.length;
   const activeStaff = users.filter(u => u.status === 'Active').length;
@@ -47,6 +53,21 @@ export default function EmployeesScreen() {
     onError: (e: any) => Alert.alert('Error', e.message || 'Failed to add employee'),
   });
 
+  const updateMutation = useMutation({
+    mutationFn: async () => {
+      if (!selectedEmployee) return;
+      const res = await apiRequest('PUT', `/api/users/${selectedEmployee.id}`, dataToEdit);
+      return res.json();
+    },
+    onSuccess: () => {
+      setShowEditModal(false);
+      setSelectedEmployee(null);
+      queryClient.invalidateQueries({ queryKey: ['/api/users'] });
+      if (Platform.OS !== 'web') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    },
+    onError: (e: any) => Alert.alert('Error', e.message || 'Failed to update employee'),
+  });
+
   const getRoleBadgeColor = (role: string) => {
     switch (role) {
       case 'ADMIN': return colors.admin;
@@ -63,6 +84,17 @@ export default function EmployeesScreen() {
     return colors.danger;
   };
 
+  // Convert "HH:MM" 24-hr string → "h:MM AM/PM"
+  const to12hr = (t: string) => {
+    if (!t || t === '-' || t === '') return t || '-';
+    const [hStr, mStr] = t.split(':');
+    const h = parseInt(hStr, 10);
+    if (isNaN(h)) return t;
+    const suffix = h >= 12 ? 'PM' : 'AM';
+    const h12 = h % 12 === 0 ? 12 : h % 12;
+    return `${h12}:${mStr} ${suffix}`;
+  };
+
   const tabs: { key: Tab; label: string }[] = [
     { key: 'employees', label: 'Employees' },
     { key: 'attendance', label: 'Attendance' },
@@ -70,7 +102,13 @@ export default function EmployeesScreen() {
     { key: 'performance', label: 'Performance' },
   ];
 
-  const cashiers = users.filter(u => u.role === 'CASHIER' && u.status === 'Active');
+  const cashiers = users
+    .filter(u => u.role === 'CASHIER' && u.status === 'Active')
+    .sort((a, b) => {
+      const aPerf = cashierPerformance.find(p => p.name === a.name);
+      const bPerf = cashierPerformance.find(p => p.name === b.name);
+      return (bPerf?.revenue || 0) - (aPerf?.revenue || 0);
+    });
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -84,7 +122,7 @@ export default function EmployeesScreen() {
         </Pressable>
       </View>
 
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.statsRow}>
+      <View style={styles.statsGrid}>
         <View style={[styles.miniStat, { backgroundColor: colors.card, borderColor: colors.border }]}>
           <Ionicons name="people" size={20} color={colors.tint} />
           <Text style={[styles.miniStatValue, { color: colors.text, fontFamily: 'Inter_700Bold' }]}>{totalStaff}</Text>
@@ -105,20 +143,23 @@ export default function EmployeesScreen() {
           <Text style={[styles.miniStatValue, { color: colors.success, fontFamily: 'Inter_700Bold' }]}>{onlineNow}</Text>
           <Text style={[styles.miniStatLabel, { color: colors.textMuted, fontFamily: 'Inter_400Regular' }]}>Online</Text>
         </View>
-      </ScrollView>
+      </View>
 
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabRow}>
-        {tabs.map(t => (
-          <Pressable key={t.key} onPress={() => setTab(t.key)}
-            style={[styles.tabPill, { backgroundColor: tab === t.key ? colors.tint : 'transparent', borderBottomColor: tab === t.key ? colors.tint : 'transparent' }]}>
-            <Text style={[styles.tabPillText, { color: tab === t.key ? '#fff' : colors.textSecondary, fontFamily: 'Inter_500Medium' }]}>{t.label}</Text>
-          </Pressable>
-        ))}
-      </ScrollView>
+      <View style={styles.tabContainer}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabRow}>
+          {tabs.map(t => (
+            <Pressable key={t.key} onPress={() => setTab(t.key)}
+              style={[styles.tabPill, { backgroundColor: tab === t.key ? colors.tint : 'transparent', borderColor: tab === t.key ? colors.tint : colors.border }]}>
+              <Text style={[styles.tabPillText, { color: tab === t.key ? '#fff' : colors.textSecondary, fontFamily: 'Inter_500Medium' }]}>{t.label}</Text>
+            </Pressable>
+          ))}
+        </ScrollView>
+      </View>
 
       <ScrollView contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 100 }} showsVerticalScrollIndicator={false}>
         {tab === 'employees' && users.map(u => (
-          <View key={u.id} style={[styles.empRow, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <Pressable key={u.id} onPress={() => { setSelectedEmployee(u); setDateToEdit(u); setShowEditModal(true); }}
+            style={[styles.empRow, { backgroundColor: colors.card, borderColor: colors.border }]}>
             <View style={[styles.avatar, { backgroundColor: getRoleBadgeColor(u.role) + '20' }]}>
               <Text style={[styles.avatarText, { color: getRoleBadgeColor(u.role), fontFamily: 'Inter_700Bold' }]}>{u.name.split(' ').map(n => n[0]).join('')}</Text>
             </View>
@@ -130,22 +171,24 @@ export default function EmployeesScreen() {
               <Text style={[styles.roleBadgeText, { color: getRoleBadgeColor(u.role), fontFamily: 'Inter_600SemiBold' }]}>{u.role.replace('_', ' ')}</Text>
             </View>
             <View style={[styles.statusDot, { backgroundColor: getStatusColor(u.status) }]} />
-          </View>
+          </Pressable>
         ))}
 
         {tab === 'attendance' && attendance.map(a => (
-          <View key={a.id} style={[styles.empRow, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <View style={{ flex: 1 }}>
-              <Text style={[styles.empName, { color: colors.text, fontFamily: 'Inter_600SemiBold' }]}>{a.userName}</Text>
+          <View key={a.id} style={[styles.empRow, { backgroundColor: colors.card, borderColor: colors.border, flexDirection: 'column', alignItems: 'stretch', gap: 8 }]}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+              <Text style={[styles.empName, { color: colors.text, fontFamily: 'Inter_600SemiBold', flex: 1 }]} numberOfLines={1}>{a.userName}</Text>
               <Text style={[styles.empEmail, { color: colors.textMuted, fontFamily: 'Inter_400Regular' }]}>{a.date}</Text>
             </View>
-            <Text style={[styles.attTime, { color: colors.textSecondary, fontFamily: 'Inter_400Regular' }]}>{a.checkIn || '-'}</Text>
-            <Text style={[styles.attTime, { color: colors.textSecondary, fontFamily: 'Inter_400Regular' }]}>{a.checkOut || '-'}</Text>
-            <View style={[styles.shiftBadge, { backgroundColor: a.shift === 'Morning' ? colors.tint + '20' : colors.accent + '20' }]}>
-              <Text style={[styles.shiftBadgeText, { color: a.shift === 'Morning' ? colors.tint : colors.accent, fontFamily: 'Inter_500Medium' }]}>{a.shift}</Text>
-            </View>
-            <View style={[styles.statusPill, { backgroundColor: getAttendanceColor(a.status) + '15' }]}>
-              <Text style={[styles.statusPillText, { color: getAttendanceColor(a.status), fontFamily: 'Inter_600SemiBold' }]}>{a.status}</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+              <Text style={[styles.attChip, { color: colors.textSecondary, backgroundColor: colors.background, fontFamily: 'Inter_400Regular' }]}>In: {to12hr(a.checkIn)}</Text>
+              <Text style={[styles.attChip, { color: colors.textSecondary, backgroundColor: colors.background, fontFamily: 'Inter_400Regular' }]}>Out: {to12hr(a.checkOut)}</Text>
+              <View style={[styles.shiftBadge, { backgroundColor: a.shift === 'Morning' ? colors.tint + '20' : colors.accent + '20' }]}>
+                <Text style={[styles.shiftBadgeText, { color: a.shift === 'Morning' ? colors.tint : colors.accent, fontFamily: 'Inter_500Medium' }]}>{a.shift}</Text>
+              </View>
+              <View style={[styles.statusPill, { backgroundColor: getAttendanceColor(a.status) + '15' }]}>
+                <Text style={[styles.statusPillText, { color: getAttendanceColor(a.status), fontFamily: 'Inter_600SemiBold' }]}>{a.status}</Text>
+              </View>
             </View>
           </View>
         ))}
@@ -169,6 +212,10 @@ export default function EmployeesScreen() {
         ))}
 
         {tab === 'performance' && cashiers.map(u => {
+          const perf = cashierPerformance.find(p => p.name === u.name);
+          const txns = perf?.transactions ?? 0;
+          const revenue = perf?.revenue ?? 0;
+          const avg = txns > 0 ? Math.round(revenue / txns) : 0;
           return (
             <View key={u.id} style={[styles.perfCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
               <View style={styles.perfHeader}>
@@ -177,23 +224,44 @@ export default function EmployeesScreen() {
                 </View>
                 <View>
                   <Text style={[styles.empName, { color: colors.text, fontFamily: 'Inter_600SemiBold' }]}>{u.name}</Text>
-                  <Text style={[styles.empEmail, { color: colors.textMuted, fontFamily: 'Inter_400Regular' }]}>{u.role} - {u.id}</Text>
+                  <Text style={[styles.empEmail, { color: colors.textMuted, fontFamily: 'Inter_400Regular' }]}>{u.role} • Joined {u.joinedDate}</Text>
                 </View>
               </View>
               <View style={styles.perfStats}>
                 <View style={styles.perfStatItem}>
-                  <Text style={[styles.perfStatValue, { color: colors.tint, fontFamily: 'Inter_700Bold' }]}>-</Text>
-                  <Text style={[styles.perfStatLabel, { color: colors.textMuted, fontFamily: 'Inter_400Regular' }]}>Txns</Text>
+                  <Text style={[styles.perfStatValue, { color: colors.tint, fontFamily: 'Inter_700Bold' }]}>{txns}</Text>
+                  <Text style={[styles.perfStatLabel, { color: colors.textMuted, fontFamily: 'Inter_400Regular' }]}>Sales</Text>
                 </View>
                 <View style={styles.perfStatItem}>
-                  <Text style={[styles.perfStatValue, { color: colors.success, fontFamily: 'Inter_700Bold' }]}>-</Text>
+                  <Text style={[styles.perfStatValue, { color: colors.success, fontFamily: 'Inter_700Bold' }]}>₹{revenue.toLocaleString('en-IN')}</Text>
                   <Text style={[styles.perfStatLabel, { color: colors.textMuted, fontFamily: 'Inter_400Regular' }]}>Revenue</Text>
                 </View>
                 <View style={styles.perfStatItem}>
-                  <Text style={[styles.perfStatValue, { color: colors.accent, fontFamily: 'Inter_700Bold' }]}>-</Text>
+                  <Text style={[styles.perfStatValue, { color: colors.accent, fontFamily: 'Inter_700Bold' }]}>₹{avg.toLocaleString('en-IN')}</Text>
                   <Text style={[styles.perfStatLabel, { color: colors.textMuted, fontFamily: 'Inter_400Regular' }]}>Avg/Txn</Text>
                 </View>
               </View>
+              {/* Progress bar based on share of total revenue */}
+              {revenue > 0 && (
+                <View style={{ marginTop: 10, gap: 4 }}>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                    <Text style={[{ fontSize: 11, color: colors.textMuted, fontFamily: 'Inter_400Regular' }]}>Revenue share</Text>
+                    <Text style={[{ fontSize: 11, color: colors.tint, fontFamily: 'Inter_500Medium' }]}>
+                      {cashierPerformance.length > 0
+                        ? Math.round((revenue / cashierPerformance.reduce((s, p) => s + p.revenue, 0)) * 100)
+                        : 0}%
+                    </Text>
+                  </View>
+                  <View style={{ height: 5, borderRadius: 3, backgroundColor: colors.border }}>
+                    <View style={{
+                      height: 5, borderRadius: 3, backgroundColor: colors.tint,
+                      width: `${cashierPerformance.length > 0
+                        ? Math.round((revenue / cashierPerformance.reduce((s, p) => s + p.revenue, 0)) * 100)
+                        : 0}%`
+                    }} />
+                  </View>
+                </View>
+              )}
             </View>
           );
         })}
@@ -250,6 +318,110 @@ export default function EmployeesScreen() {
           </View>
         </View>
       </Modal>
+
+      <Modal visible={showEditModal} animationType="slide" transparent>
+        <View style={[styles.modalOverlay, { backgroundColor: colors.overlay }]}>
+          <View style={[styles.formSheet, { backgroundColor: colors.background, paddingBottom: insets.bottom + 16 }]}>
+            <View style={[styles.formHeader, { borderBottomColor: colors.border }]}>
+              <Text style={[styles.formTitle, { color: colors.text, fontFamily: 'Inter_700Bold' }]}>Edit Employee</Text>
+              <Pressable onPress={() => setShowEditModal(false)}>
+                <Ionicons name="close" size={24} color={colors.text} />
+              </Pressable>
+            </View>
+
+            <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16 }}>
+              <View style={styles.formField}>
+                <Text style={[styles.formLabel, { color: colors.textSecondary }]}>Full Name</Text>
+                <TextInput
+                  style={[styles.formInput, { color: colors.text, backgroundColor: colors.inputBg, borderColor: colors.border }]}
+                  value={dataToEdit.name}
+                  onChangeText={v => setDateToEdit(p => ({ ...p, name: v }))}
+                />
+              </View>
+
+              <View style={styles.formRow}>
+                <View style={[styles.formField, { flex: 1 }]}>
+                  <Text style={[styles.formLabel, { color: colors.textSecondary }]}>Email</Text>
+                  <TextInput
+                    style={[styles.formInput, { color: colors.text, backgroundColor: colors.inputBg, borderColor: colors.border }]}
+                    value={dataToEdit.email}
+                    onChangeText={v => setDateToEdit(p => ({ ...p, email: v }))}
+                    keyboardType="email-address"
+                    autoCapitalize="none"
+                  />
+                </View>
+                <View style={[styles.formField, { flex: 1 }]}>
+                  <Text style={[styles.formLabel, { color: colors.textSecondary }]}>Phone</Text>
+                  <TextInput
+                    style={[styles.formInput, { color: colors.text, backgroundColor: colors.inputBg, borderColor: colors.border }]}
+                    value={dataToEdit.phone}
+                    onChangeText={v => setDateToEdit(p => ({ ...p, phone: v }))}
+                    keyboardType="phone-pad"
+                  />
+                </View>
+              </View>
+
+              <View style={styles.formRow}>
+                <View style={[styles.formField, { flex: 1 }]}>
+                  <Text style={[styles.formLabel, { color: colors.textSecondary }]}>Password</Text>
+                  <TextInput
+                    style={[styles.formInput, { color: colors.text, backgroundColor: colors.inputBg, borderColor: colors.border }]}
+                    value={dataToEdit.password}
+                    onChangeText={v => setDateToEdit(p => ({ ...p, password: v }))}
+                    secureTextEntry
+                  />
+                </View>
+                <View style={[styles.formField, { flex: 1 }]}>
+                  <Text style={[styles.formLabel, { color: colors.textSecondary }]}>Quick PIN (4 digits)</Text>
+                  <TextInput
+                    style={[styles.formInput, { color: colors.text, backgroundColor: colors.inputBg, borderColor: colors.border }]}
+                    value={dataToEdit.pin}
+                    onChangeText={v => setDateToEdit(p => ({ ...p, pin: v }))}
+                    keyboardType="numeric"
+                  />
+                </View>
+              </View>
+
+              <View style={styles.formRow}>
+                <View style={[styles.formField, { flex: 1 }]}>
+                  <Text style={[styles.formLabel, { color: colors.textSecondary }]}>Role</Text>
+                  <View style={{ gap: 8 }}>
+                    {(['CASHIER', 'STOCK_CLERK', 'ADMIN'] as const).map(r => (
+                      <Pressable key={r} onPress={() => setDateToEdit(p => ({ ...p, role: r }))}
+                        style={[styles.roleSelectPill, { paddingVertical: 8, backgroundColor: dataToEdit.role === r ? getRoleBadgeColor(r) : colors.inputBg, borderColor: colors.border }]}>
+                        <Text style={[styles.roleSelectText, { fontSize: 11, color: dataToEdit.role === r ? '#fff' : colors.textSecondary }]}>{r.replace('_', ' ')}</Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                </View>
+
+                <View style={[styles.formField, { flex: 1 }]}>
+                  <Text style={[styles.formLabel, { color: colors.textSecondary }]}>Status</Text>
+                  <View style={{ gap: 8 }}>
+                    {['Active', 'Inactive'].map(s => (
+                      <Pressable key={s} onPress={() => setDateToEdit(p => ({ ...p, status: s as any }))}
+                        style={[styles.roleSelectPill, { paddingVertical: 8, backgroundColor: dataToEdit.status === s ? (s === 'Active' ? colors.success : colors.danger) : colors.inputBg, borderColor: colors.border }]}>
+                        <Text style={[styles.roleSelectText, { fontSize: 11, color: dataToEdit.status === s ? '#fff' : colors.textSecondary }]}>{s}</Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                </View>
+              </View>
+
+              <View style={{ flexDirection: 'row', gap: 12, marginTop: 20 }}>
+                <Pressable onPress={() => setShowEditModal(false)} style={[styles.submitBtn, { backgroundColor: 'transparent', borderColor: colors.border, borderWidth: 1, flex: 1, marginTop: 0 }]}>
+                  <Text style={[styles.submitBtnText, { color: colors.text }]}>Cancel</Text>
+                </Pressable>
+                <Pressable onPress={() => updateMutation.mutate()} style={[styles.submitBtn, { backgroundColor: '#2563eb', flex: 1, marginTop: 0 }]}>
+                  <Ionicons name="save-outline" size={18} color="#fff" />
+                  <Text style={[styles.submitBtnText, { fontFamily: 'Inter_600SemiBold' }]}>Update Employee</Text>
+                </Pressable>
+              </View>
+
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -260,13 +432,14 @@ const styles = StyleSheet.create({
   headerTitle: { fontSize: 22 },
   headerSub: { fontSize: 13, marginTop: 2 },
   addBtn: { width: 42, height: 42, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
-  statsRow: { paddingHorizontal: 16, gap: 10, marginBottom: 12 },
-  miniStat: { paddingHorizontal: 16, paddingVertical: 12, borderRadius: 14, borderWidth: 1, alignItems: 'center', gap: 4, minWidth: 80 },
+  statsGrid: { flexDirection: 'row', paddingHorizontal: 16, gap: 10, marginBottom: 12 },
+  miniStat: { flex: 1, paddingVertical: 12, borderRadius: 14, borderWidth: 1, alignItems: 'center', gap: 4 },
   miniStatValue: { fontSize: 18 },
   miniStatLabel: { fontSize: 10 },
-  tabRow: { paddingHorizontal: 16, gap: 6, marginBottom: 12 },
-  tabPill: { paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20 },
-  tabPillText: { fontSize: 13 },
+  tabContainer: { marginBottom: 12 },
+  tabRow: { paddingHorizontal: 16, gap: 6 },
+  tabPill: { paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20, borderWidth: 1, minWidth: 90, alignItems: 'center', justifyContent: 'center' },
+  tabPillText: { fontSize: 13, textAlign: 'center' },
   empRow: { flexDirection: 'row', alignItems: 'center', padding: 14, borderRadius: 14, borderWidth: 1, marginBottom: 8, gap: 10 },
   avatar: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
   avatarText: { fontSize: 14 },
@@ -276,6 +449,7 @@ const styles = StyleSheet.create({
   roleBadgeText: { fontSize: 9 },
   statusDot: { width: 8, height: 8, borderRadius: 4 },
   attTime: { fontSize: 12, minWidth: 40, textAlign: 'center' },
+  attChip: { fontSize: 12, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },
   shiftBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },
   shiftBadgeText: { fontSize: 10 },
   statusPill: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8 },
@@ -288,6 +462,7 @@ const styles = StyleSheet.create({
   perfStatItem: { flex: 1, alignItems: 'center', paddingVertical: 8, borderRadius: 10 },
   perfStatValue: { fontSize: 16 },
   perfStatLabel: { fontSize: 10, marginTop: 2 },
+  formRow: { flexDirection: 'row', gap: 12 },
   modalOverlay: { flex: 1, justifyContent: 'flex-end' },
   formSheet: { height: '85%', borderTopLeftRadius: 24, borderTopRightRadius: 24 },
   formHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 16, borderBottomWidth: 1 },

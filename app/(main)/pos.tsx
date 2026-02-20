@@ -78,7 +78,10 @@ export default function POSScreen() {
       const res = await apiRequest('POST', '/api/transactions', {
         items: cart.map(c => ({ productId: c.product.id, qty: c.qty })),
         paymentMethod, customerPhone, discount: discountAmount,
-        cashierId: user?.id || '', cashierName: user?.name || '',
+        // Only send ID if the user is actually a CASHIER. 
+        // Otherwise send empty string so the server randomizes between Priya/Sneha.
+        cashierId: user?.role === 'CASHIER' ? user.id : '',
+        cashierName: user?.role === 'CASHIER' ? user.name : '',
       });
       return res.json();
     },
@@ -149,17 +152,19 @@ export default function POSScreen() {
         />
       </View>
 
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.catRow}>
-        {CATEGORIES.map(cat => (
-          <Pressable
-            key={cat}
-            onPress={() => setSelectedCategory(cat)}
-            style={[styles.catPill, { backgroundColor: selectedCategory === cat ? colors.tint : colors.card, borderColor: colors.border }]}
-          >
-            <Text style={[styles.catPillText, { color: selectedCategory === cat ? '#fff' : colors.textSecondary, fontFamily: 'Inter_500Medium' }]}>{cat}</Text>
-          </Pressable>
-        ))}
-      </ScrollView>
+      <View style={styles.catContainer}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.catRow}>
+          {CATEGORIES.map(cat => (
+            <Pressable
+              key={cat}
+              onPress={() => setSelectedCategory(cat)}
+              style={[styles.catPill, { backgroundColor: selectedCategory === cat ? colors.tint : colors.card, borderColor: colors.border }]}
+            >
+              <Text style={[styles.catPillText, { color: selectedCategory === cat ? '#fff' : colors.textSecondary, fontFamily: 'Inter_500Medium' }]}>{cat}</Text>
+            </Pressable>
+          ))}
+        </ScrollView>
+      </View>
 
       <FlatList
         data={filtered}
@@ -337,9 +342,10 @@ const styles = StyleSheet.create({
   clearBtnText: { fontSize: 13 },
   searchRow: { flexDirection: 'row', alignItems: 'center', borderRadius: 12, paddingHorizontal: 14, height: 44, gap: 8, borderWidth: 1, marginBottom: 12 },
   searchInput: { flex: 1, fontSize: 14, height: '100%' },
-  catRow: { paddingHorizontal: 16, gap: 8, marginBottom: 12 },
-  catPill: { paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20, borderWidth: 1 },
-  catPillText: { fontSize: 13 },
+  catContainer: { marginBottom: 16, zIndex: 10, position: 'relative' },
+  catRow: { paddingHorizontal: 16, gap: 8 },
+  catPill: { paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20, borderWidth: 1, minWidth: 70, alignItems: 'center', justifyContent: 'center' },
+  catPillText: { fontSize: 13, textAlign: 'center' },
   productRow: { gap: 10, marginBottom: 10 },
   productCard: { flex: 1, borderRadius: 14, padding: 12, borderWidth: 1 },
   productTop: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 },

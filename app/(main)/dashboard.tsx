@@ -174,16 +174,17 @@ export default function DashboardScreen() {
               <View style={styles.sectionHeader}>
                 <Text style={[styles.sectionTitle, { color: colors.text, fontFamily: 'Inter_600SemiBold' }]}>Sales by Category</Text>
               </View>
+              {/* Added flexible wrapping container for safer layout */}
               <View style={styles.categoryGrid}>
                 {Object.entries(stats.categoryRevenue).sort((a, b) => b[1] - a[1]).slice(0, 6).map(([cat, rev], i) => {
                   const catColors = ['#2563eb', '#16a34a', '#f59e0b', '#ec4899', '#8b5cf6', '#06b6d4'];
                   const total = Object.values(stats.categoryRevenue).reduce((s, v) => s + v, 0);
                   const pct = total > 0 ? ((rev / total) * 100).toFixed(0) : '0';
                   return (
-                    <View key={cat} style={styles.categoryItem}>
+                    <View key={cat} style={styles.categoryRow}>
                       <View style={[styles.categoryDot, { backgroundColor: catColors[i % catColors.length] }]} />
-                      <View style={{ flex: 1 }}>
-                        <Text style={[styles.categoryName, { color: colors.text, fontFamily: 'Inter_500Medium' }]}>{cat}</Text>
+                      <View style={{ flex: 1, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <Text style={[styles.categoryName, { color: colors.text, fontFamily: 'Inter_500Medium', flex: 1 }]}>{cat}</Text>
                         <Text style={[styles.categoryValue, { color: colors.textMuted, fontFamily: 'Inter_400Regular' }]}>Rs.{Math.round(rev)} ({pct}%)</Text>
                       </View>
                     </View>
@@ -199,10 +200,12 @@ export default function DashboardScreen() {
               <View style={styles.paymentRow}>
                 {Object.entries(stats.paymentMethods).map(([method, data]) => {
                   const pmColors: Record<string, string> = { Cash: '#16a34a', Card: '#2563eb', UPI: '#8b5cf6' };
+                  // Cap bar height so count label + bar + label all fit in the container
+                  const barHeight = Math.min(Math.max(data.count * 6, 16), 70);
                   return (
                     <View key={method} style={styles.paymentItem}>
                       <Text style={[styles.paymentCount, { color: pmColors[method] || colors.tint, fontFamily: 'Inter_700Bold' }]}>{data.count}</Text>
-                      <View style={[styles.paymentBar, { backgroundColor: pmColors[method] || colors.tint, height: Math.max(data.count * 20, 10) }]} />
+                      <View style={[styles.paymentBar, { backgroundColor: pmColors[method] || colors.tint, height: barHeight }]} />
                       <Text style={[styles.paymentLabel, { color: colors.textMuted, fontFamily: 'Inter_500Medium' }]}>{method}</Text>
                     </View>
                   );
@@ -273,8 +276,8 @@ export default function DashboardScreen() {
               <LiveDot color={colors.success} />
               <Text style={[styles.sectionTitle, { color: colors.text, fontFamily: 'Inter_600SemiBold' }]}>Activity Feed</Text>
             </View>
-            {logs.slice(0, 15).map((log, i) => (
-              <View key={log.id} style={[styles.logRow, i < 14 && { borderBottomWidth: 1, borderBottomColor: colors.border + '50' }]}>
+            {logs.slice(0, 8).map((log, i) => (
+              <View key={log.id} style={[styles.logRow, i < 7 && { borderBottomWidth: 1, borderBottomColor: colors.border + '50' }]}>
                 <Text style={[styles.logTime, { color: colors.textMuted, fontFamily: 'Inter_400Regular' }]}>{formatTime(log.timestamp)}</Text>
                 <View style={[styles.rolePill, { backgroundColor: getRoleBadgeColor(log.userRole) + '20' }]}>
                   <Text style={[styles.rolePillText, { color: getRoleBadgeColor(log.userRole), fontFamily: 'Inter_600SemiBold' }]}>{log.userRole.replace('_', ' ')}</Text>
@@ -300,27 +303,28 @@ const styles = StyleSheet.create({
   topActions: { flexDirection: 'row', gap: 8 },
   iconBtn: { width: 40, height: 40, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   statsRow: { paddingHorizontal: 20, gap: 12, marginBottom: 16 },
-  statCard: { width: 150, borderRadius: 16, padding: 16 },
+  statCard: { width: Math.min(150, SCREEN_WIDTH * 0.38), borderRadius: 16, padding: 14 },
   statIcon: { width: 36, height: 36, borderRadius: 10, alignItems: 'center', justifyContent: 'center', marginBottom: 12 },
-  statValue: { fontSize: 20, color: '#fff' },
-  statLabel: { fontSize: 12, color: 'rgba(255,255,255,0.8)', marginTop: 4 },
-  sectionCard: { marginHorizontal: 16, borderRadius: 16, padding: 16, marginBottom: 16, borderWidth: 1 },
+  statValue: { fontSize: 18, color: '#fff' },
+  statLabel: { fontSize: 11, color: 'rgba(255,255,255,0.8)', marginTop: 4 },
+  sectionCard: { marginHorizontal: 16, borderRadius: 16, padding: 14, marginBottom: 16, borderWidth: 1, overflow: 'hidden' },
   sectionHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 16 },
-  sectionTitle: { fontSize: 16, flex: 1 },
-  chartContainer: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', height: 140, paddingTop: 20 },
+  sectionTitle: { fontSize: 15, flex: 1 },
+  chartContainer: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', height: 130, paddingTop: 16 },
   barCol: { alignItems: 'center', flex: 1 },
   barValue: { fontSize: 9, marginBottom: 4 },
-  bar: { width: 28, borderRadius: 6, minHeight: 4 },
+  bar: { width: Math.min(28, SCREEN_WIDTH * 0.06), borderRadius: 6, minHeight: 4 },
   barLabel: { fontSize: 10, marginTop: 6 },
   categoryGrid: { gap: 10 },
+  categoryRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   categoryItem: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   categoryDot: { width: 10, height: 10, borderRadius: 5 },
-  categoryName: { fontSize: 14 },
-  categoryValue: { fontSize: 12 },
-  paymentRow: { flexDirection: 'row', justifyContent: 'space-around', alignItems: 'flex-end', height: 100 },
-  paymentItem: { alignItems: 'center', gap: 6 },
-  paymentCount: { fontSize: 16 },
-  paymentBar: { width: 40, borderRadius: 8 },
+  categoryName: { fontSize: 13, flex: 1 },
+  categoryValue: { fontSize: 12, flexShrink: 1 },
+  paymentRow: { flexDirection: 'row', justifyContent: 'space-around', alignItems: 'flex-end', minHeight: 120, paddingVertical: 8 },
+  paymentItem: { alignItems: 'center', gap: 6, flex: 1 },
+  paymentCount: { fontSize: 15 },
+  paymentBar: { width: Math.min(44, SCREEN_WIDTH * 0.1), borderRadius: 8 },
   paymentLabel: { fontSize: 12 },
   alertRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10, borderBottomWidth: 0.5 },
   alertIcon: { width: 36, height: 36, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },

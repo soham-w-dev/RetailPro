@@ -3,80 +3,80 @@ import { createServer, type Server } from "node:http";
 import { storage } from "./storage";
 
 export async function registerRoutes(app: Express): Promise<Server> {
-  app.post("/api/auth/login", (req: Request, res: Response) => {
+  app.post("/api/auth/login", async (req: Request, res: Response) => {
     const { email, password } = req.body;
     if (!email || !password) return res.status(400).json({ error: "Email and password required" });
-    const user = storage.getUserByEmail(email);
+    const user = await storage.getUserByEmail(email);
     if (!user || user.password !== password) return res.status(401).json({ error: "Invalid credentials" });
     if (user.status === "Inactive") return res.status(403).json({ error: "Account is inactive" });
     const { password: _, ...safe } = user;
-    storage.addActivityLog({ userId: user.id, userName: user.name, userRole: user.role, action: "Logged in", details: `${user.name} logged in via email`, timestamp: new Date().toISOString() });
+    await storage.addActivityLog({ userId: user.id, userName: user.name, userRole: user.role, action: "Logged in", details: `${user.name} logged in via email`, timestamp: new Date().toISOString() });
     res.json({ user: safe });
   });
 
-  app.post("/api/auth/pin-login", (req: Request, res: Response) => {
+  app.post("/api/auth/pin-login", async (req: Request, res: Response) => {
     const { pin } = req.body;
     if (!pin) return res.status(400).json({ error: "PIN required" });
-    const user = storage.getUserByPin(pin);
+    const user = await storage.getUserByPin(pin);
     if (!user) return res.status(401).json({ error: "Invalid PIN" });
     if (user.status === "Inactive") return res.status(403).json({ error: "Account is inactive" });
     const { password: _, ...safe } = user;
-    storage.addActivityLog({ userId: user.id, userName: user.name, userRole: user.role, action: "Logged in via PIN", details: `${user.name} logged in via Quick PIN`, timestamp: new Date().toISOString() });
+    await storage.addActivityLog({ userId: user.id, userName: user.name, userRole: user.role, action: "Logged in via PIN", details: `${user.name} logged in via Quick PIN`, timestamp: new Date().toISOString() });
     res.json({ user: safe });
   });
 
-  app.get("/api/users", (_req: Request, res: Response) => {
-    const users = storage.getUsers().map(({ password, ...u }) => u);
-    res.json(users);
+  app.get("/api/users", async (_req: Request, res: Response) => {
+    const users = await storage.getUsers();
+    res.json(users.map(({ password, ...u }) => u));
   });
 
-  app.get("/api/users/:id", (req: Request, res: Response) => {
-    const user = storage.getUser(req.params.id);
+  app.get("/api/users/:id", async (req: Request, res: Response) => {
+    const user = await storage.getUser(req.params.id as string);
     if (!user) return res.status(404).json({ error: "User not found" });
     const { password, ...safe } = user;
     res.json(safe);
   });
 
-  app.post("/api/users", (req: Request, res: Response) => {
+  app.post("/api/users", async (req: Request, res: Response) => {
     const { name, email, phone, password, pin, role, status } = req.body;
     if (!name || !email || !password || !pin || !role) return res.status(400).json({ error: "Missing required fields" });
-    const existing = storage.getUserByEmail(email);
+    const existing = await storage.getUserByEmail(email);
     if (existing) return res.status(409).json({ error: "Email already exists" });
-    const user = storage.createUser({ name, email, phone: phone || "", password, pin, role, status: status || "Active", joinedDate: new Date().toISOString().split("T")[0] });
-    storage.addActivityLog({ userId: user.id, userName: user.name, userRole: user.role, action: `Added employee: ${user.name}`, details: `New ${user.role} added`, timestamp: new Date().toISOString() });
+    const user = await storage.createUser({ name, email, phone: phone || "", password, pin, role, status: status || "Active", joinedDate: new Date().toISOString().split("T")[0] });
+    await storage.addActivityLog({ userId: user.id, userName: user.name, userRole: user.role, action: `Added employee: ${user.name}`, details: `New ${user.role} added`, timestamp: new Date().toISOString() });
     const { password: _, ...safe } = user;
     res.status(201).json(safe);
   });
 
-  app.put("/api/users/:id", (req: Request, res: Response) => {
-    const updated = storage.updateUser(req.params.id, req.body);
+  app.put("/api/users/:id", async (req: Request, res: Response) => {
+    const updated = await storage.updateUser(req.params.id as string, req.body);
     if (!updated) return res.status(404).json({ error: "User not found" });
     const { password, ...safe } = updated;
     res.json(safe);
   });
 
-  app.delete("/api/users/:id", (req: Request, res: Response) => {
-    const ok = storage.deleteUser(req.params.id);
+  app.delete("/api/users/:id", async (req: Request, res: Response) => {
+    const ok = await storage.deleteUser(req.params.id as string);
     if (!ok) return res.status(404).json({ error: "User not found" });
     res.json({ success: true });
   });
 
-  app.get("/api/products", (_req: Request, res: Response) => {
-    res.json(storage.getProducts());
+  app.get("/api/products", async (_req: Request, res: Response) => {
+    res.json(await storage.getProducts());
   });
 
-  app.get("/api/products/:id", (req: Request, res: Response) => {
-    const p = storage.getProduct(req.params.id);
+  app.get("/api/products/:id", async (req: Request, res: Response) => {
+    const p = await storage.getProduct(req.params.id as string);
     if (!p) return res.status(404).json({ error: "Product not found" });
     res.json(p);
   });
 
-  app.post("/api/products", (req: Request, res: Response) => {
+  app.post("/api/products", async (req: Request, res: Response) => {
     const { name, sku, barcode, category, sellingPrice, costPrice, stock, minStock, unit, gstRate, manufacturingDate, expiryDate, supplier, batchNo, section } = req.body;
     if (!name || sellingPrice === undefined || costPrice === undefined) return res.status(400).json({ error: "Missing required fields" });
     if (sellingPrice < 0 || costPrice < 0) return res.status(400).json({ error: "Prices must be positive" });
     if (manufacturingDate && expiryDate && new Date(manufacturingDate) > new Date(expiryDate)) return res.status(400).json({ error: "Manufacturing date cannot be after expiry date" });
-    const product = storage.createProduct({
+    const product = await storage.createProduct({
       name, sku: sku || "", barcode: barcode || "", category: category || "Groceries",
       sellingPrice: Number(sellingPrice), costPrice: Number(costPrice),
       stock: Number(stock) || 0, minStock: Number(minStock) || 0,
@@ -85,43 +85,90 @@ export async function registerRoutes(app: Express): Promise<Server> {
       supplier: supplier || "", batchNo: batchNo || "", section: section || "",
       lastUpdated: new Date().toISOString().split("T")[0],
     });
-    storage.addActivityLog({ userId: "SYSTEM", userName: "System", userRole: "SYSTEM", action: `Added new product: ${product.name}`, details: `Product ${product.name} added to inventory`, timestamp: new Date().toISOString() });
+    await storage.addActivityLog({ userId: "SYSTEM", userName: "System", userRole: "SYSTEM", action: `Added new product: ${product.name}`, details: `Product ${product.name} added to inventory`, timestamp: new Date().toISOString() });
     res.status(201).json(product);
   });
 
-  app.put("/api/products/:id", (req: Request, res: Response) => {
-    const existing = storage.getProduct(req.params.id);
+  app.put("/api/products/:id", async (req: Request, res: Response) => {
+    const existing = await storage.getProduct(req.params.id as string);
     if (!existing) return res.status(404).json({ error: "Product not found" });
     if (req.body.sellingPrice !== undefined && req.body.costPrice !== undefined) {
       if (Number(req.body.sellingPrice) < Number(req.body.costPrice)) {
         if (!req.body.confirmLoss) return res.status(422).json({ error: "Selling price is less than cost price", requireConfirmation: true });
       }
     }
-    const updated = storage.updateProduct(req.params.id, req.body);
+    const updated = await storage.updateProduct(req.params.id as string, req.body);
     res.json(updated);
   });
 
-  app.delete("/api/products/:id", (req: Request, res: Response) => {
-    const ok = storage.deleteProduct(req.params.id);
+  app.delete("/api/products/:id", async (req: Request, res: Response) => {
+    const ok = await storage.deleteProduct(req.params.id as string);
     if (!ok) return res.status(404).json({ error: "Product not found" });
     res.json({ success: true });
   });
 
-  app.post("/api/products/:id/restock", (req: Request, res: Response) => {
+  app.post("/api/products/:id/restock", async (req: Request, res: Response) => {
     const { qty } = req.body;
     if (!qty || qty <= 0) return res.status(400).json({ error: "Quantity must be positive" });
-    const product = storage.updateStock(req.params.id, Number(qty));
+    const product = await storage.updateStock(req.params.id as string, Number(qty));
     if (!product) return res.status(404).json({ error: "Product not found" });
-    storage.addActivityLog({ userId: "SYSTEM", userName: "System", userRole: "SYSTEM", action: `Updated Stock: ${product.name} (+${qty})`, details: `Stock updated to ${product.stock}`, timestamp: new Date().toISOString() });
+    await storage.addActivityLog({ userId: "SYSTEM", userName: "System", userRole: "SYSTEM", action: `Updated Stock: ${product.name} (+${qty})`, details: `Stock updated to ${product.stock}`, timestamp: new Date().toISOString() });
     res.json(product);
   });
 
-  app.post("/api/transactions", (req: Request, res: Response) => {
+  app.post("/api/transactions", async (req: Request, res: Response) => {
     const { items, paymentMethod, customerPhone, cashierId, cashierName, discount } = req.body;
     if (!items || !items.length) return res.status(400).json({ error: "No items in cart" });
 
+    // Strict Cashier Assignment Logic
+    let finalCashierId = cashierId;
+    let finalCashierName = cashierName;
+
+    let currentUser = undefined;
+    if (cashierId) {
+      try {
+        currentUser = await storage.getUser(cashierId);
+      } catch (e) {
+        console.error("Error fetching user:", e);
+      }
+    }
+
+    if (currentUser && currentUser.role === "CASHIER") {
+      // If the logged-in user is a verified Cashier, force use their real name from DB
+      finalCashierId = currentUser.id;
+      finalCashierName = currentUser.name;
+    } else {
+      // If user is Admin, Stock Clerk, or unknown -> Assign roughly equally to Priya or Sneha
+      const users = await storage.getUsers();
+
+      // Filter for active cashiers, prioritizing our main ones
+      const availableCashiers = users.filter(u =>
+        u.role === "CASHIER" &&
+        u.status === "Active" &&
+        (u.name.toLowerCase().includes("priya") || u.name.toLowerCase().includes("sneha"))
+      );
+
+      // If no Priya/Sneha, fall back to ANY active cashier
+      const candidates = availableCashiers.length > 0
+        ? availableCashiers
+        : users.filter(u => u.role === "CASHIER" && u.status === "Active");
+
+      if (candidates.length > 0) {
+        // Randomly pick one
+        const randomCashier = candidates[Math.floor(Math.random() * candidates.length)];
+
+        console.log("Randomly assigned cashier:", randomCashier.name);
+        finalCashierId = randomCashier.id;
+        finalCashierName = randomCashier.name;
+      } else {
+        // Fallback to a default system user if NO cashier exists
+        finalCashierId = "SYSTEM";
+        finalCashierName = "Store Admin";
+      }
+    }
+
     for (const item of items) {
-      const product = storage.getProduct(item.productId);
+      const product = await storage.getProduct(item.productId);
       if (!product) return res.status(400).json({ error: `Product ${item.productId} not found` });
       if (item.qty > product.stock) return res.status(400).json({ error: `Insufficient stock for ${product.name}. Available: ${product.stock}` });
     }
@@ -131,7 +178,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     const txItems: any[] = [];
 
     for (const item of items) {
-      const product = storage.getProduct(item.productId)!;
+      const product = (await storage.getProduct(item.productId))!;
       const total = product.sellingPrice * item.qty;
       const gst = total * (product.gstRate / 100);
       subtotal += total;
@@ -140,23 +187,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
         productId: product.id, productName: product.name,
         qty: item.qty, price: product.sellingPrice, gstRate: product.gstRate, total,
       });
-      storage.updateStock(product.id, -item.qty);
+      await storage.updateStock(product.id, -item.qty);
     }
 
     const discountAmount = Number(discount) || 0;
     const totalAmount = subtotal - discountAmount + gstAmount;
-    const invoiceNo = `INV-${new Date().getFullYear()}-${String(storage.getTransactions().length + 1).padStart(4, "0")}`;
+    const invoiceNo = `INV-${new Date().getFullYear()}-${String((await storage.getTransactions()).length + 1).padStart(4, "0")}`;
 
-    const tx = storage.createTransaction({
+    const tx = await storage.createTransaction({
       invoiceNo, items: txItems, subtotal, discount: discountAmount,
       gstAmount: Math.round(gstAmount * 100) / 100, total: Math.round(totalAmount * 100) / 100,
       paymentMethod: paymentMethod || "Cash", customerPhone: customerPhone || "",
-      cashierId: cashierId || "", cashierName: cashierName || "", createdAt: new Date().toISOString(),
+      cashierId: finalCashierId, cashierName: finalCashierName, createdAt: new Date().toISOString(),
     });
 
     const itemSummary = txItems.map(i => `${i.qty}x ${i.productName}`).join(", ");
-    storage.addActivityLog({
-      userId: cashierId || "SYSTEM", userName: cashierName || "System", userRole: "CASHIER",
+    await storage.addActivityLog({
+      userId: finalCashierId, userName: finalCashierName, userRole: "CASHIER",
       action: `Sold ${itemSummary}`, details: `Invoice ${invoiceNo} - Total: Rs.${tx.total}`,
       timestamp: new Date().toISOString(),
     });
@@ -164,40 +211,47 @@ export async function registerRoutes(app: Express): Promise<Server> {
     res.status(201).json(tx);
   });
 
-  app.get("/api/transactions", (_req: Request, res: Response) => {
-    res.json(storage.getTransactions());
+  app.get("/api/transactions", async (_req: Request, res: Response) => {
+    res.json(await storage.getTransactions());
   });
 
-  app.get("/api/transactions/:id", (req: Request, res: Response) => {
-    const tx = storage.getTransaction(req.params.id);
+  app.get("/api/transactions/:id", async (req: Request, res: Response) => {
+    const tx = await storage.getTransaction(req.params.id);
     if (!tx) return res.status(404).json({ error: "Transaction not found" });
     res.json(tx);
   });
 
-  app.get("/api/activity-logs", (_req: Request, res: Response) => {
-    res.json(storage.getActivityLogs());
+  app.get("/api/activity-logs", async (_req: Request, res: Response) => {
+    res.json(await storage.getActivityLogs());
   });
 
-  app.get("/api/attendance", (_req: Request, res: Response) => {
-    res.json(storage.getAttendance());
+  app.get("/api/attendance", async (_req: Request, res: Response) => {
+    res.json(await storage.getAttendance());
   });
 
-  app.get("/api/session-logs", (_req: Request, res: Response) => {
-    res.json(storage.getSessionLogs());
+  app.get("/api/session-logs", async (_req: Request, res: Response) => {
+    res.json(await storage.getSessionLogs());
   });
 
-  app.get("/api/dashboard/stats", (_req: Request, res: Response) => {
-    const transactions = storage.getTransactions();
-    const products = storage.getProducts();
-    const users = storage.getUsers();
+  app.get("/api/dashboard/stats", async (_req: Request, res: Response) => {
+    const transactions = await storage.getTransactions();
+    const products = await storage.getProducts();
+    const users = await storage.getUsers();
     const now = new Date();
     const today = now.toISOString().split("T")[0];
 
     const todayTx = transactions.filter(t => t.createdAt.startsWith(today));
     const totalRevenue = transactions.reduce((s, t) => s + t.total, 0);
     const todayRevenue = todayTx.reduce((s, t) => s + t.total, 0);
+
+    // Have to fetch products for cost calculation but careful about N+1.
+    // Since we have all products in memory (or fetched list), we can map.
+    // For large datastores, this logic should move to database aggregation queries.
+    // For now, we will use the fetched products list.
+    const productMap = new Map(products.map(p => [p.id, p]));
+
     const totalCost = transactions.reduce((s, t) => s + t.items.reduce((c, i) => {
-      const p = storage.getProduct(i.productId);
+      const p = productMap.get(i.productId);
       return c + (p ? p.costPrice * i.qty : 0);
     }, 0), 0);
     const netProfit = totalRevenue - totalCost;
@@ -211,7 +265,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
     const categoryRevenue: Record<string, number> = {};
     transactions.forEach(t => t.items.forEach(i => {
-      const p = storage.getProduct(i.productId);
+      const p = productMap.get(i.productId);
       if (p) categoryRevenue[p.category] = (categoryRevenue[p.category] || 0) + i.total;
     }));
 
@@ -229,7 +283,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const dayTx = transactions.filter(t => t.createdAt.startsWith(ds));
       const rev = dayTx.reduce((s, t) => s + t.total, 0);
       const cost = dayTx.reduce((s, t) => s + t.items.reduce((c, it) => {
-        const p = storage.getProduct(it.productId);
+        const p = productMap.get(it.productId);
         return c + (p ? p.costPrice * it.qty : 0);
       }, 0), 0);
       last7Days.push({ date: ds, revenue: Math.round(rev * 100) / 100, profit: Math.round((rev - cost) * 100) / 100 });
@@ -262,14 +316,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
     });
   });
 
-  app.get("/api/reports", (_req: Request, res: Response) => {
-    const transactions = storage.getTransactions();
-    const products = storage.getProducts();
-    const users = storage.getUsers();
+  app.get("/api/reports", async (_req: Request, res: Response) => {
+    const transactions = await storage.getTransactions();
+    const products = await storage.getProducts();
+    // const users = await storage.getUsers();
 
     const totalRevenue = transactions.reduce((s, t) => s + t.total, 0);
+    const productMap = new Map(products.map(p => [p.id, p]));
     const totalCost = transactions.reduce((s, t) => s + t.items.reduce((c, i) => {
-      const p = storage.getProduct(i.productId);
+      const p = productMap.get(i.productId);
       return c + (p ? p.costPrice * i.qty : 0);
     }, 0), 0);
     const totalDiscount = transactions.reduce((s, t) => s + t.discount, 0);
